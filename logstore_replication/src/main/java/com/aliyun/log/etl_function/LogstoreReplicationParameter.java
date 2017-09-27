@@ -1,16 +1,18 @@
 package com.aliyun.log.etl_function;
 
+import com.aliyun.fc.runtime.FunctionComputeLogger;
 import com.aliyun.log.etl_function.common.Consts;
 import net.sf.json.JSONException;
 import net.sf.json.JSONObject;
 
 public class LogstoreReplicationParameter {
 
+    private FunctionComputeLogger logger;
     private String targetLogEndpoint;
     private String targetLogProjectName;
     private String targetLogLogstoreName;
 
-    public LogstoreReplicationParameter() {
+    public LogstoreReplicationParameter(FunctionComputeLogger logger) {
     }
 
     boolean parseFromJsonObject(JSONObject jsonObj) {
@@ -21,7 +23,7 @@ public class LogstoreReplicationParameter {
             this.targetLogLogstoreName = targetObj.getString(Consts.EVENT_LOG_LOGSTORE_FIELD_NAME);
             return true;
         } catch (JSONException e) {
-            e.printStackTrace();
+            logger.error("invalid function parameter, exception: " + e.getMessage());
             return false;
         }
     }

@@ -29,7 +29,7 @@ public class LogstoreReplication implements StreamRequestHandler {
         if (!event.parseFromInputStream(inputStream)) {
             throw new IOException("read input stream fail");
         }
-        LogstoreReplicationParameter parameter = new LogstoreReplicationParameter();
+        LogstoreReplicationParameter parameter = new LogstoreReplicationParameter(logger);
         if (!parameter.parseFromJsonObject(event.getParameterJsonObject())) {
             throw new IOException("parse input stream into json event fail");
         }
@@ -50,8 +50,8 @@ public class LogstoreReplication implements StreamRequestHandler {
         String targetProjectName = parameter.getTargetLogProjectName();
         String targetLogstoreName = parameter.getTargetLogLogstoreName();
 
-        Client logClient = new Client(logEndpoint, accessKeyId, accessKeySecret);
-        logClient.SetSecurityToken(securityToken);
+        Client sourceClient = new Client(logEndpoint, accessKeyId, accessKeySecret);
+        sourceClient.SetSecurityToken(securityToken);
 
         Client targetClient = new Client(targetEndpoint, accessKeyId, accessKeySecret);
         targetClient.SetSecurityToken(securityToken);
@@ -62,51 +62,45 @@ public class LogstoreReplication implements StreamRequestHandler {
         while (!cursor.equals(event.getLogEndCursor())) {
             List<LogGroupData> logGroupDataList = null;
             String nextCursor = "";
-            int rawSize = 0;
             int retryTime = 0;
             while (true) {
                 ++retryTime;
                 try {
-                    BatchGetLogResponse logDataRes = logClient.BatchGetLog(logProjectName, logLogstoreName, logShardId,
+                    BatchGetLogResponse logDataRes = sourceClient.BatchGetLog(logProjectName, logLogstoreName, logShardId,
                             3, cursor, logEndCurosr);
                     logGroupDataList = logDataRes.GetLogGroups();
-                    rawSize = logDataRes.GetRawSize();
                     nextCursor = logDataRes.GetNextCursor();
                     logger.info("BatchGetLog success, project_name: " + logProjectName + ", job_name: " + event.getJobName()
                             + ", task_id: " + event.getTaskId() + ", cursor: " + cursor + ", logGroup count: " + logGroupDataList.size());
                     break;
                 } catch (LogException e) {
                     if (retryTime >= MAX_RETRY_TIMES) {
-                        if (IGNORE_FAIL) {
-                            logger.error("BatchGetLog fail and ignore the fail, project_name: " + logProjectName
-                                    + ", job_name: " + event.getJobName() + ", task_id: " + event.getTaskId() +
-                                    "retry_time: " + retryTime + ", error_code: " + e.GetErrorCode() +
-                                    ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
-                            break;
-                        } else {
-                            throw new IOException("BatchGetLog fail, retry_time: " + retryTime + ", error_code: " + e.GetErrorCode()
-                                    + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
-                        }
-                    }
-                        logger.warn("BatchGetLog fail, project_name: " + logProjectName + ", job_name: " + event.getJobName() + ", task_id: "
-                                + event.getTaskId() + ", retry_time: " + retryTime + ", error_code: " + e.GetErrorCode()
+                        logger.error("BatchGetLog fail and ignore the fail, project_name: " + logProjectName
+                                + ", job_name: " + event.getJobName() + ", task_id: " + event.getTaskId() +
+                                "retry_time: " + retryTime + ", error_code: " + e.GetErrorCode() +
+                                ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
+                        throw new IOException("BatchGetLog fail, retry_time: " + retryTime + ", error_code: " + e.GetErrorCode()
                                 + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
+                    }
+                    logger.warn("BatchGetLog fail, project_name: " + logProjectName + ", job_name: " + event.getJobName() + ", task_id: "
+                            + event.getTaskId() + ", retry_time: " + retryTime + ", error_code: " + e.GetErrorCode()
+                            + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
                     try {
                         Thread.sleep(RETRY_SLEEP_MILLIS);
                     } catch (InterruptedException ie) {
                     }
                 }
             }
-            response.addIngestBytes(rawSize);
+            cursor = nextCursor;
             for (LogGroupData logGroupData : logGroupDataList) {
                 FastLogGroup fastLogGroup = logGroupData.GetFastLogGroup();
                 byte[] logGroupBytes = fastLogGroup.getBytes();
                 response.addIngestLines(fastLogGroup.getLogsCount());
+                response.addIngestBytes(logGroupBytes.length);
                 PutLogsRequest req = new PutLogsRequest(targetProjectName, targetLogstoreName,
                         fastLogGroup.hasTopic() ? fastLogGroup.getTopic() : "",
                         fastLogGroup.hasSource() ? fastLogGroup.getSource() : "",
                         logGroupBytes, null);
-                response.addIngestBytes(logGroupBytes.length);
                 retryTime = 0;
                 while (true) {
                     ++retryTime;
@@ -129,18 +123,16 @@ public class LogstoreReplication implements StreamRequestHandler {
                                         + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
                             }
                         }
+                        logger.warn("PutLogs fail, project_name: " + logProjectName + ", job_name: " + event.getJobName()
+                                + ", task_id: " + event.getTaskId() + ", retry_time: " + retryTime + ", error_code: "
+                                + e.GetErrorCode() + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
                         try {
                             Thread.sleep(RETRY_SLEEP_MILLIS);
                         } catch (InterruptedException ie) {
                         }
-                        logger.warn( "PutLogs fail, project_name: " + logProjectName + ", job_name: " + event.getJobName()
-                                + ", task_id: " + event.getTaskId() + ", retry_time: " + retryTime + ", error_code: "
-                                + e.GetErrorCode() + ", error_message: " + e.GetErrorMessage() + ", request_id: " + e.GetRequestId());
                     }
                 }
             }
-            response.addShipBytes(rawSize);
-            cursor = nextCursor;
         }
         outputStream.write(response.toJsonString().getBytes());
     }
