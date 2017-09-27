@@ -109,7 +109,7 @@ public class LogstoreReplication implements StreamRequestHandler {
                         response.addShipLines(fastLogGroup.getLogsCount());
                         response.addShipBytes(logGroupBytes.length);
                         logger.info("PutLogs success, project_name: " + logProjectName + ", job_name: " + event.getJobName()
-                                + ", task_id: " + event.getTaskId() + ", logcount: " + fastLogGroup.getLogsCount());
+                                + ", task_id: " + event.getTaskId() + ", logs: " + fastLogGroup.getLogsCount());
                         break;
                     } catch (LogException e) {
                         if (retryTime >= MAX_RETRY_TIMES) {

@@ -5,7 +5,7 @@ public class Consts {
     public final static String EVENT_SOURCE_FIELD_NAME = "source";
     public final static String EVENT_PARAMETER_FIELD_NAME = "parameter";
     public final static String EVENT_TARGET_FIELD_NAME = "target";
-    public final static String EVENT_JOB_NAME_FIELD_NAME = "taskId";
+    public final static String EVENT_JOB_NAME_FIELD_NAME = "jobName";
     public final static String EVENT_TASK_ID_FIELD_NAME = "taskId";
 
     public final static String EVENT_LOG_ENDPOINT_FIELD_NAME = "endpoint";
